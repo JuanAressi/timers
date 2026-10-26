@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Timers</title>
+<style>
+  :root {
+    --bg: #f6f6f4;
+    --card: #ffffff;
+    --text: #1c1c1c;
+    --muted: #6b6b6b;
+    --border: #e3e3df;
+    --accent: #2f7d5b;
+    --accent-soft: #e6f2ec;
+    --danger: #b3412f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151515;
+      --card: #1f1f1f;
+      --text: #ececec;
+      --muted: #9a9a9a;
+      --border: #303030;
+      --accent: #5fbf91;
+      --accent-soft: #1b2f25;
+      --danger: #e07462;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 560px; margin: 0 auto; padding: 20px 16px 40px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  h1 { font-size: 18px; margin: 0; }
+  .total { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  input[type=text] {
+    min-width: 0;
+    padding: 9px 11px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--text);
+    font: inherit;
+  }
+  button, .button {
+    font: inherit;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button:hover, .button:hover { border-color: var(--muted); }
+  button:focus-visible, .button:focus-within, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  form.add { display: flex; gap: 8px; margin-bottom: 16px; }
+  form.add input { flex: 1; }
+
+  .warning {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--danger);
+    border-radius: 8px;
+    color: var(--danger);
+  }
+
+  ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+  li.timer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  li.timer.running { border-color: var(--accent); background: var(--accent-soft); }
+  li.timer .name {
+    flex: 1;
+    border-color: transparent;
+    background: transparent;
+    padding: 6px 8px;
+  }
+  li.timer .name:hover, li.timer .name:focus { border-color: var(--border); background: var(--card); outline: none; }
+  .time {
+    font-variant-numeric: tabular-nums;
+    font-size: 20px;
+    font-weight: 600;
+    min-width: 7ch;
+    text-align: right;
+  }
+  .running .time { color: var(--accent); }
+  .toggle { min-width: 78px; }
+  .icon { width: 36px; padding: 8px 0; text-align: center; color: var(--muted); }
+  .icon.danger:hover { color: var(--danger); border-color: var(--danger); }
+
+  .empty { color: var(--muted); text-align: center; padding: 24px 0; margin: 0; }
+
+  footer {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 20px;
+    color: var(--muted);
+  }
+  footer .spacer { flex: 1; }
+  .check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+  @media (max-width: 440px) {
+    li.timer { flex-wrap: wrap; }
+    li.timer .name { flex-basis: 100%; }
+    li.timer .time { margin-right: auto; text-align: left; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Timers</h1>
+    <span class="total" id="total">Total 0:00:00</span>
+  </header>
+
+  <form class="add" id="add-form" autocomplete="off">
+    <input type="text" id="new-name" placeholder="Nombre del proyecto" maxlength="80" aria-label="Nombre del nuevo timer">
+    <button type="submit" class="primary">Agregar</button>
+  </form>
+
+  <p class="warning" id="warning" hidden>
+    No se pudo guardar en este navegador (¿modo incógnito o almacenamiento bloqueado?). Exportá un respaldo para no perder los tiempos.
+  </p>
+
+  <ul id="timers"></ul>
+  <p class="empty" id="empty">Todavía no hay timers. Agregá uno arriba.</p>
+
+  <footer>
+    <label class="check"><input type="checkbox" id="single-running"> Solo uno corriendo a la vez</label>
+    <span class="spacer"></span>
+    <button type="button" id="export">Exportar</button>
+    <label class="button">Importar<input type="file" id="import" accept="application/json,.json" hidden></label>
+  </footer>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  // Elapsed time is derived from timestamps, never from counting ticks,
+  // so a running timer keeps "counting" while the page is closed or reloaded.
+  const STORAGE_KEY = 'project-timers.v1';
+  const TICK_MS = 500;
+
+  const listEl = document.getElementById('timers');
+  const totalEl = document.getElementById('total');
+  const emptyEl = document.getElementById('empty');
+  const addForm = document.getElementById('add-form');
+  const nameInput = document.getElementById('new-name');
+  const singleEl = document.getElementById('single-running');
+  const exportBtn = document.getElementById('export');
+  const importInput = document.getElementById('import');
+  const warningEl = document.getElementById('warning');
+
+  const timeEls = new Map(); // timer id -> element that shows its elapsed time
+  let state = loadState();
+
+  // ---------- Persistence ----------
+
+  function isValidTimer(t) {
+    return t !== null && typeof t === 'object'
+      && typeof t.id === 'string'
+      && typeof t.name === 'string'
+      && Number.isFinite(t.accumulatedMs) && t.accumulatedMs >= 0
+      && (t.startedAt === null || Number.isFinite(t.startedAt));
+  }
+
+  function isValidState(s) {
+    return s !== null && typeof s === 'object'
+      && Array.isArray(s.timers)
+      && s.timers.every(isValidTimer);
+  }
+
+  function normalize(s) {
+    return {
+      timers: s.timers.map(t => ({
+        id: t.id,
+        name: t.name,
+        accumulatedMs: t.accumulatedMs,
+        startedAt: t.startedAt,
+      })),
+      singleRunning: s.singleRunning !== false,
+    };
+  }
+
+  function loadState() {
+    let raw = null;
+    try {
+      raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (isValidState(parsed)) return normalize(parsed);
+      }
+    } catch (e) { /* handled below */ }
+
+    // Keep a copy of unreadable data instead of silently overwriting it.
+    if (raw) {
+      try { localStorage.setItem(STORAGE_KEY + '.corrupt', raw); } catch (e) { /* ignore */ }
+    }
+    return { timers: [], singleRunning: true };
+  }
+
+  function saveState() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      warningEl.hidden = true;
+    } catch (e) {
+      warningEl.hidden = false;
+    }
+  }
+
+  // ---------- Time helpers ----------
+
+  function elapsedMs(timer, now) {
+    return timer.accumulatedMs + (timer.startedAt ? Math.max(0, now - timer.startedAt) : 0);
+  }
+
+  function formatDuration(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function newId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  function findTimer(id) {
+    return state.timers.find(t => t.id === id);
+  }
+
+  // ---------- Actions ----------
+
+  function addTimer(name) {
+    state.timers.push({ id: newId(), name, accumulatedMs: 0, startedAt: null });
+    saveState();
+    render();
+  }
+
+  function pause(timer, now) {
+    if (!timer.startedAt) return;
+    timer.accumulatedMs += Math.max(0, now - timer.startedAt);
+    timer.startedAt = null;
+  }
+
+  function toggleTimer(id) {
+    const timer = findTimer(id);
+    if (!timer) return;
+    const now = Date.now();
+    if (timer.startedAt) {
+      pause(timer, now);
+    } else {
+      if (state.singleRunning) state.timers.forEach(t => pause(t, now));
+      timer.startedAt = now;
+    }
+    saveState();
+    render();
+  }
+
+  function resetTimer(id) {
+    const timer = findTimer(id);
+    if (!timer) return;
+    const now = Date.now();
+    if (elapsedMs(timer, now) > 0 && !confirm(`¿Reiniciar "${timer.name}" a 0?`)) return;
+    timer.accumulatedMs = 0;
+    timer.startedAt = timer.startedAt ? now : null; // a running timer restarts from zero
+    saveState();
+    render();
+  }
+
+  function deleteTimer(id) {
+    const timer = findTimer(id);
+    if (!timer) return;
+    if (!confirm(`¿Borrar "${timer.name}" (${formatDuration(elapsedMs(timer, Date.now()))})?`)) return;
+    state.timers = state.timers.filter(t => t.id !== id);
+    saveState();
+    render();
+  }
+
+  function renameTimer(id, value) {
+    const timer = findTimer(id);
+    if (!timer) return;
+    timer.name = value.trim() || 'Sin nombre';
+    saveState();
+    tick();
+  }
+
+  // ---------- Rendering ----------
+
+  function makeButton(label, onClick, className, title) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = label;
+    if (className) btn.className = className;
+    if (title) { btn.title = title; btn.setAttribute('aria-label', title); }
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  function renderTimer(timer) {
+    const li = document.createElement('li');
+    li.className = 'timer' + (timer.startedAt ? ' running' : '');
+
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.className = 'name';
+    name.value = timer.name;
+    name.maxLength = 80;
+    name.setAttribute('aria-label', 'Nombre del timer');
+    name.addEventListener('change', () => {
+      renameTimer(timer.id, name.value);
+      name.value = timer.name;
+    });
+    name.addEventListener('keydown', e => { if (e.key === 'Enter') name.blur(); });
+
+    const time = document.createElement('span');
+    time.className = 'time';
+    timeEls.set(timer.id, time);
+
+    const running = Boolean(timer.startedAt);
+    li.append(
+      name,
+      time,
+      makeButton(running ? 'Pausar' : 'Iniciar', () => toggleTimer(timer.id), running ? 'toggle' : 'toggle primary'),
+      makeButton('↺', () => resetTimer(timer.id), 'icon', 'Reiniciar'),
+      makeButton('✕', () => deleteTimer(timer.id), 'icon danger', 'Borrar'),
+    );
+    return li;
+  }
+
+  function render() {
+    listEl.textContent = '';
+    timeEls.clear();
+    state.timers.forEach(t => listEl.appendChild(renderTimer(t)));
+    emptyEl.hidden = state.timers.length > 0;
+    singleEl.checked = state.singleRunning;
+    tick();
+  }
+
+  // Updates only the time labels and the tab title; skips DOM work while the tab is hidden.
+  function tick() {
+    const now = Date.now();
+    const visible = !document.hidden;
+    let total = 0;
+    let firstRunning = null;
+
+    for (const timer of state.timers) {
+      const ms = elapsedMs(timer, now);
+      total += ms;
+      if (timer.startedAt && !firstRunning) firstRunning = timer;
+      if (visible) {
+        const el = timeEls.get(timer.id);
+        if (el) el.textContent = formatDuration(ms);
+      }
+    }
+
+    if (visible) totalEl.textContent = 'Total ' + formatDuration(total);
+    document.title = firstRunning
+      ? `${formatDuration(elapsedMs(firstRunning, now))} · ${firstRunning.name}`
+      : 'Timers';
+  }
+
+  // ---------- Backup ----------
+
+  function exportState() {
+    const payload = { exportedAt: new Date().toISOString(), ...state };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `timers-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  }
+
+  async function importState(file) {
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (!isValidState(parsed)) throw new Error('invalid backup');
+      if (!confirm('Esto reemplaza los timers actuales por los del archivo. ¿Seguir?')) return;
+      state = normalize(parsed);
+      saveState();
+      render();
+    } catch (e) {
+      alert('El archivo no es un respaldo válido de Timers.');
+    }
+  }
+
+  // ---------- Wiring ----------
+
+  addForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const name = nameInput.value.trim();
+    if (!name) { nameInput.focus(); return; }
+    addTimer(name);
+    nameInput.value = '';
+    nameInput.focus();
+  });
+
+  singleEl.addEventListener('change', () => {
+    state.singleRunning = singleEl.checked;
+    saveState();
+  });
+
+  exportBtn.addEventListener('click', exportState);
+
+  importInput.addEventListener('change', () => {
+    const file = importInput.files && importInput.files[0];
+    importInput.value = '';
+    if (file) importState(file);
+  });
+
+  // Keep several open copies of the page in sync.
+  window.addEventListener('storage', e => {
+    if (e.key === STORAGE_KEY) {
+      state = loadState();
+      render();
+    }
+  });
+
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+
+  render();
+  setInterval(tick, TICK_MS);
+})();
+</script>
+</body>
+</html>
