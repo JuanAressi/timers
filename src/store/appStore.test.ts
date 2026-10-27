@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import fixture from '../storage/__fixtures__/legacy-backup.json'
 import { DEFAULT_GROUP_NAME } from '../domain/defaults'
+import { findInvariantViolations } from '../domain/invariants'
 import { adjustment, buildState, local, makeTimer, MINUTE, sequentialIds, session } from '../domain/testUtils'
 import type { PersistedState } from '../domain/types'
 import { createMemoryBackend, type KeyValueBackend } from '../storage/backend'
+import { parseLegacyBackup, type LegacyBackup } from '../storage/legacyBackup'
 import { createStorage, STATE_KEY } from '../storage/storage'
 import { createAppStore } from './appStore'
+import { syncWithOtherTabs } from './tabSync'
 
 const START = local(2026, 10, 26, 10)
 
@@ -26,6 +30,7 @@ function setup(initial: Record<string, string> = {}, { failWrite = () => false }
       memory.setItem(key, value)
     },
     removeItem: (key) => memory.removeItem(key),
+    subscribe: (listener) => memory.subscribe(listener),
   }
   const clock = { now: START }
   const newId = sequentialIds('id')
@@ -34,6 +39,7 @@ function setup(initial: Record<string, string> = {}, { failWrite = () => false }
   writes.length = 0
   return {
     store,
+    storage,
     memory,
     clock,
     writes,
@@ -209,5 +215,112 @@ describe('createAppStore: actions', () => {
     setFailWrite(() => false)
     store.getState().addTimer({ groupId: groupId(store.getState().data), name: 'B' })
     expect(store.getState().storageStatus).toBe('ok')
+  })
+})
+
+function legacyFixture(): LegacyBackup {
+  const parsed = parseLegacyBackup(fixture)
+  if (!parsed.ok) throw new Error(parsed.error)
+  return parsed.value
+}
+
+describe('createAppStore: parity actions', () => {
+  it('deleteTimer removes the timer with its entries and saves', () => {
+    const { store, stored } = setup()
+    const [a, b] = addTwo(store)
+    store.getState().toggleTimer(a)
+    store.getState().deleteTimer(a)
+    expect(store.getState().data.timers.map((timer) => timer.id)).toEqual([b])
+    expect(store.getState().data.entries).toEqual([])
+    expect(stored()).toEqual(store.getState().data)
+  })
+
+  it('setSingleRunning saves the setting and, when turned on, leaves only the last started timer running', () => {
+    const { store, clock, stored } = setup()
+    const [a, b] = addTwo(store)
+    store.getState().setSingleRunning(false)
+    store.getState().toggleTimer(b)
+    clock.now += 1000
+    store.getState().toggleTimer(a)
+    clock.now += 1000
+    store.getState().setSingleRunning(true)
+    expect(store.getState().data.settings.singleRunning).toBe(true)
+    expect(store.getState().data.entries).toEqual([
+      expect.objectContaining({ timerId: b, endedAt: START + 2000 }),
+      expect.objectContaining({ timerId: a, endedAt: null }),
+    ])
+    expect(stored()).toEqual(store.getState().data)
+  })
+
+  it('importLegacy saves and returns the counts, leaving no invariant violations', () => {
+    const { store, stored } = setup()
+    expect(store.getState().importLegacy(legacyFixture())).toEqual({ imported: 9, skipped: 0 })
+    expect(store.getState().data.timers).toHaveLength(9)
+    expect(findInvariantViolations(store.getState().data)).toEqual([])
+    expect(stored()).toEqual(store.getState().data)
+  })
+
+  it('importing the same file again imports nothing and does not save', () => {
+    const { store, writes } = setup()
+    store.getState().importLegacy(legacyFixture())
+    const before = store.getState().data
+    writes.length = 0
+    expect(store.getState().importLegacy(legacyFixture())).toEqual({ imported: 0, skipped: 9 })
+    expect(store.getState().data).toBe(before)
+    expect(writes).toEqual([])
+  })
+
+  it('replaceData takes the new data without saving', () => {
+    const { store, writes } = setup()
+    store.getState().replaceData(validState)
+    expect(store.getState().data).toBe(validState)
+    expect(writes).toEqual([])
+  })
+
+  it('dismissStorageNotice clears corrupt or repaired, but not save errors', () => {
+    const repaired = setup({ [STATE_KEY]: JSON.stringify(orphanEntryState) })
+    repaired.store.getState().dismissStorageNotice()
+    expect(repaired.store.getState().storageStatus).toBe('ok')
+
+    const failing = setup()
+    failing.setFailWrite(() => true)
+    failing.store.getState().addTimer({ groupId: groupId(failing.store.getState().data), name: 'A' })
+    failing.store.getState().dismissStorageNotice()
+    expect(failing.store.getState().storageStatus).toBe('save-failed')
+  })
+})
+
+describe('syncWithOtherTabs', () => {
+  it('replaces the data when another tab saves valid data, without saving it back', () => {
+    const { store, storage, memory, writes } = setup()
+    syncWithOtherTabs(store, storage)
+    memory.emitExternalChange(STATE_KEY, JSON.stringify(validState))
+    expect(store.getState().data).toEqual(validState)
+    expect(writes).toEqual([])
+  })
+
+  it('takes repaired data from another tab without writing anything', () => {
+    const { store, storage, memory, writes } = setup()
+    syncWithOtherTabs(store, storage)
+    memory.emitExternalChange(STATE_KEY, JSON.stringify(orphanEntryState))
+    expect(store.getState().data.entries).toEqual([])
+    expect(writes).toEqual([])
+  })
+
+  it('keeps its state when another tab leaves unreadable data', () => {
+    const { store, storage, memory } = setup()
+    addTwo(store)
+    const before = store.getState().data
+    syncWithOtherTabs(store, storage)
+    memory.emitExternalChange(STATE_KEY, '{')
+    expect(store.getState().data).toBe(before)
+  })
+
+  it('stops syncing when cancelled', () => {
+    const { store, storage, memory } = setup()
+    const before = store.getState().data
+    syncWithOtherTabs(store, storage)()
+    memory.emitExternalChange(STATE_KEY, JSON.stringify(validState))
+    expect(store.getState().data).toBe(before)
   })
 })

@@ -3,7 +3,7 @@ import { createInitialState } from '../domain/defaults'
 import { adjustment, buildState, local, makeGroup, makeTimer, sequentialIds, session } from '../domain/testUtils'
 import type { PersistedState } from '../domain/types'
 import { createMemoryBackend, type KeyValueBackend, type MemoryBackend } from './backend'
-import { BACKUP_KEY_PREFIX, CORRUPT_KEY, createStorage, STATE_KEY } from './storage'
+import { BACKUP_KEY_PREFIX, CORRUPT_KEY, createStorage, STATE_KEY, type LoadResult } from './storage'
 
 const NOW = local(2026, 10, 26, 13)
 const BACKUP_KEY = `${BACKUP_KEY_PREFIX}${NOW}`
@@ -28,6 +28,7 @@ function withFailures(memory: MemoryBackend, { failRead = false, failWrite = () 
       memory.setItem(key, value)
     },
     removeItem: (key) => memory.removeItem(key),
+    subscribe: (listener) => memory.subscribe(listener),
   }
   return { backend, writes }
 }
@@ -188,8 +189,65 @@ describe('save', () => {
   })
 })
 
+describe('subscribe', () => {
+  function collect(storage: ReturnType<typeof setup>['storage']) {
+    const results: LoadResult[] = []
+    const unsubscribe = storage.subscribe((result) => results.push(result))
+    return { results, unsubscribe }
+  }
+
+  it('reports a valid external change as loaded', () => {
+    const { storage, memory } = setup()
+    const { results } = collect(storage)
+    memory.emitExternalChange(STATE_KEY, JSON.stringify(validState))
+    expect(results).toEqual([{ kind: 'loaded', state: validState }])
+  })
+
+  it('reports an invalid external change as corrupt, without copying it', () => {
+    const { storage, memory, writes } = setup()
+    const { results } = collect(storage)
+    memory.emitExternalChange(STATE_KEY, '{')
+    expect(results).toEqual([{ kind: 'corrupt', backedUp: false }])
+    expect(writes).toEqual([])
+    expect(memory.getItem(CORRUPT_KEY)).toBeNull()
+  })
+
+  it('reports a valid but inconsistent external change as repaired, without writing to the backend', () => {
+    const { storage, memory, writes } = setup()
+    const { results } = collect(storage)
+    const raw = JSON.stringify(orphanEntryState)
+    memory.emitExternalChange(STATE_KEY, raw)
+    expect(results).toEqual([
+      {
+        kind: 'repaired',
+        state: { ...orphanEntryState, entries: [orphanEntryState.entries[0]] },
+        repairs: [expect.anything()],
+        backupKey: null,
+      },
+    ])
+    expect(writes).toEqual([])
+    expect(memory.dump()).toEqual({ [STATE_KEY]: raw })
+  })
+
+  it('ignores changes to other keys', () => {
+    const { storage, memory } = setup()
+    const { results } = collect(storage)
+    memory.emitExternalChange(CORRUPT_KEY, '{')
+    memory.emitExternalChange('other', JSON.stringify(validState))
+    expect(results).toEqual([])
+  })
+
+  it('stops calling the listener after unsubscribing', () => {
+    const { storage, memory } = setup()
+    const { results, unsubscribe } = collect(storage)
+    unsubscribe()
+    memory.emitExternalChange(STATE_KEY, JSON.stringify(validState))
+    expect(results).toEqual([])
+  })
+})
+
 describe('createStorage', () => {
-  it('exposes only load and save', () => {
-    expect(Object.keys(setup().storage)).toEqual(['load', 'save'])
+  it('exposes only load, save and subscribe', () => {
+    expect(Object.keys(setup().storage)).toEqual(['load', 'save', 'subscribe'])
   })
 })

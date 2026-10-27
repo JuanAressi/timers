@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_COLOR } from './defaults'
-import { buildState, makeGroup, makeTimer, sequentialIds } from './testUtils'
-import { addTimer, MAX_TIMER_NAME_LENGTH, normalizeTimerName, renameTimer, UNNAMED_TIMER } from './timers'
+import { findInvariantViolations } from './invariants'
+import { adjustment, buildState, makeGroup, makeTimer, sequentialIds, session } from './testUtils'
+import {
+  addTimer,
+  deleteTimer,
+  MAX_TIMER_NAME_LENGTH,
+  normalizeTimerName,
+  renameTimer,
+  UNNAMED_TIMER,
+} from './timers'
 
 const groups = [makeGroup('g1'), makeGroup('g2', { order: 1 })]
 
@@ -85,5 +93,41 @@ describe('normalizeTimerName', () => {
   it('matches what renameTimer stores', () => {
     expect(normalizeTimerName('  Nuevo ')).toBe('Nuevo')
     expect(normalizeTimerName('')).toBe(UNNAMED_TIMER)
+  })
+})
+
+describe('deleteTimer', () => {
+  const state = buildState({
+    timers: [makeTimer('a', 'g1'), makeTimer('b', 'g1', { order: 1 })],
+    entries: [
+      session('s1', 'a', 1000, 2000),
+      adjustment('j1', 'a', 1500, 60_000),
+      session('s2', 'b', 1000, 3000),
+      adjustment('j2', 'b', 2500, 5000),
+      session('s3', 'a', 4000),
+    ],
+  })
+
+  it('removes the timer with its sessions and adjustments', () => {
+    const result = deleteTimer(state, 'a')
+    expect(result.timers.map((timer) => timer.id)).toEqual(['b'])
+    expect(result.entries.some((entry) => entry.timerId === 'a')).toBe(false)
+  })
+
+  it('leaves the other timers and their entries untouched', () => {
+    const result = deleteTimer(state, 'a')
+    expect(result.timers[0]).toBe(state.timers[1])
+    expect(result.entries).toEqual([state.entries[2], state.entries[3]])
+    expect(result.groups).toBe(state.groups)
+  })
+
+  it('deleting a running timer leaves no orphan sessions', () => {
+    const result = deleteTimer(state, 'a')
+    expect(result.entries.filter((entry) => entry.type === 'session' && entry.endedAt === null)).toEqual([])
+    expect(findInvariantViolations(result)).toEqual([])
+  })
+
+  it('returns the same state when the timer does not exist', () => {
+    expect(deleteTimer(state, 'nope')).toBe(state)
   })
 })

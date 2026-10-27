@@ -29,6 +29,12 @@ export interface AppStorage {
   load(): LoadResult
   /** Never throws. */
   save(state: PersistedState): Result<void, SaveError>
+  /**
+   * Calls `listener` when another tab saves. The new data goes through the same checks as `load`, but nothing is
+   * written: no copies (so `corrupt` comes with `backedUp: false` and `repaired` with `backupKey: null`) and no
+   * repaired state. The tab that loads it from scratch takes care of that. Returns a function that cancels it.
+   */
+  subscribe(listener: (result: LoadResult) => void): () => void
 }
 
 export interface StorageOptions {
@@ -92,14 +98,19 @@ export function createStorage(backend: KeyValueBackend, { clock, newId }: Storag
     }
   }
 
+  /** The stored text, or `undefined` if it can't be read. */
+  function readRaw(): string | null | undefined {
+    try {
+      return backend.getItem(STATE_KEY)
+    } catch {
+      return undefined
+    }
+  }
+
   function load(): LoadResult {
     const now = clock()
-    let raw: string | null
-    try {
-      raw = backend.getItem(STATE_KEY)
-    } catch {
-      return { kind: 'unavailable' }
-    }
+    const raw = readRaw()
+    if (raw === undefined) return { kind: 'unavailable' }
     if (raw === null) return { kind: 'empty' }
 
     const parsed = parseStoredState(raw)
@@ -117,5 +128,22 @@ export function createStorage(backend: KeyValueBackend, { clock, newId }: Storag
     return { kind: 'repaired', state, repairs, backupKey }
   }
 
-  return { load, save }
+  /** Like `load`, but read-only. */
+  function readExternalChange(): LoadResult {
+    const raw = readRaw()
+    if (raw === undefined) return { kind: 'unavailable' }
+    if (raw === null) return { kind: 'empty' }
+    const parsed = parseStoredState(raw)
+    if (!parsed.ok) return { kind: 'corrupt', backedUp: false }
+    const { state, repairs } = repairState(parsed.value, clock(), newId)
+    return repairs.length === 0 ? { kind: 'loaded', state } : { kind: 'repaired', state, repairs, backupKey: null }
+  }
+
+  function subscribe(listener: (result: LoadResult) => void): () => void {
+    return backend.subscribe((key) => {
+      if (key === STATE_KEY) listener(readExternalChange())
+    })
+  }
+
+  return { load, save, subscribe }
 }

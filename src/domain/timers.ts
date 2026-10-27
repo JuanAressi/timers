@@ -48,3 +48,13 @@ export function renameTimer(state: PersistedState, timerId: Id, name: string): P
     timers: state.timers.map((timer) => (timer === current ? { ...timer, name: normalized } : timer)),
   }
 }
+
+/** Removes a timer and all its entries (invariant 6). Returns the same state if the timer doesn't exist. */
+export function deleteTimer(state: PersistedState, timerId: Id): PersistedState {
+  if (!state.timers.some((timer) => timer.id === timerId)) return state
+  return {
+    ...state,
+    timers: state.timers.filter((timer) => timer.id !== timerId),
+    entries: state.entries.filter((entry) => entry.timerId !== timerId),
+  }
+}

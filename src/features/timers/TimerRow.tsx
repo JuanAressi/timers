@@ -6,6 +6,7 @@ import { useNow } from '../../store/clock'
 import { useAppStore } from '../../store/instance'
 import { selectTimerTimes } from '../../store/selectors'
 import { Button } from '../../ui/Button'
+import { DeleteTimerButton } from './DeleteTimerButton'
 
 /** Inline name editor: commits on blur (Enter blurs), Escape reverts. */
 function TimerNameInput({ timer }: { timer: Timer }) {
@@ -81,6 +82,7 @@ export function TimerRow({ timer }: { timer: Timer }) {
       >
         {running ? 'Pausar' : 'Iniciar'}
       </Button>
+      <DeleteTimerButton timer={timer} totalMs={totalMs} />
     </li>
   )
 }

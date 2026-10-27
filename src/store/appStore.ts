@@ -1,8 +1,11 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { createInitialState, ensureDefaultGroup } from '../domain/defaults'
+import { importLegacyBackup } from '../domain/legacyImport'
 import { toggleTimer } from '../domain/sessions'
-import { addTimer, renameTimer } from '../domain/timers'
+import { setSingleRunning } from '../domain/settings'
+import { addTimer, deleteTimer, renameTimer } from '../domain/timers'
 import type { Id, IdFactory, PersistedState } from '../domain/types'
+import type { LegacyBackup } from '../storage/legacyBackup'
 import type { AppStorage, LoadResult } from '../storage/storage'
 
 /**
@@ -22,6 +25,15 @@ export interface AppState {
   addTimer: (input: { groupId: Id; name: string }) => boolean
   renameTimer: (timerId: Id, name: string) => void
   toggleTimer: (timerId: Id) => void
+  /** Removes the timer and all its entries. */
+  deleteTimer: (timerId: Id) => void
+  setSingleRunning: (value: boolean) => void
+  /** Adds the timers of a prototype backup to "General", skipping the ones already imported. */
+  importLegacy: (backup: LegacyBackup) => { imported: number; skipped: number }
+  /** Takes the data another tab saved. It doesn't save it again, so tabs don't keep re-saving each other's changes. */
+  replaceData: (data: PersistedState) => void
+  /** Hides the `corrupt` / `repaired` notice. Save errors can't be dismissed. */
+  dismissStorageNotice: () => void
 }
 
 export type AppStore = StoreApi<AppState>
@@ -90,6 +102,29 @@ export function createAppStore({ storage, clock, newId }: AppStoreDeps): AppStor
 
       toggleTimer: (timerId) => {
         commit(toggleTimer(get().data, timerId, clock(), newId))
+      },
+
+      deleteTimer: (timerId) => {
+        commit(deleteTimer(get().data, timerId))
+      },
+
+      setSingleRunning: (value) => {
+        commit(setSingleRunning(get().data, value, clock()))
+      },
+
+      importLegacy: (backup) => {
+        const { state, imported, skipped } = importLegacyBackup(get().data, backup, clock(), newId)
+        commit(state)
+        return { imported, skipped }
+      },
+
+      replaceData: (data) => {
+        set({ data })
+      },
+
+      dismissStorageNotice: () => {
+        const { storageStatus } = get()
+        if (storageStatus === 'corrupt' || storageStatus === 'repaired') set({ storageStatus: 'ok' })
       },
     }
   })

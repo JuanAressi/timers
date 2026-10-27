@@ -4,7 +4,7 @@ type BaseProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className'> & { 
 
 /** `icon` buttons have no visible text, so they require an `aria-label`. */
 export type ButtonProps =
-  | (BaseProps & { variant?: 'primary' | 'secondary' })
+  | (BaseProps & { variant?: 'primary' | 'secondary' | 'danger' })
   | (BaseProps & { variant: 'icon'; 'aria-label': string })
 
 const base =
@@ -14,6 +14,7 @@ const base =
 
 const variants = {
   primary: 'border-accent bg-accent px-3 py-2 text-on-accent hover:brightness-110',
+  danger: 'border-danger bg-danger px-3 py-2 text-on-danger hover:brightness-110',
   secondary:
     'border-neutral-300 bg-white px-3 py-2 text-neutral-900 hover:border-neutral-500 ' +
     'dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:border-neutral-500',
