@@ -1,8 +1,12 @@
 # Timers
 
+[![CI](https://github.com/JuanAressi/timers/actions/workflows/ci.yml/badge.svg)](https://github.com/JuanAressi/timers/actions/workflows/ci.yml)
+
 Lightweight multi-timer to track how much time goes into each project. Group timers (e.g. *Coding*, *Chores*), start and pause them, adjust time by hand, and see where your day went.
 
 > **Status: v0, in progress.** Web app first; v1 will ship as an Ubuntu desktop app with Tauri.
+
+**Live:** https://juanaressi.github.io/timers/
 
 ## Principles
 

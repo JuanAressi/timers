@@ -5,6 +5,8 @@ import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Relative asset paths: the same build works on GitHub Pages (/timers/), locally and in Tauri
+  base: './',
   plugins: [react(), tailwindcss()],
   test: {
     environment: 'node',
