@@ -14,7 +14,7 @@ describe('setSingleRunning', () => {
   it('turning it off changes the setting but not the sessions', () => {
     const state = buildState({ timers: [makeTimer('a', 'g1')], entries: [session('s1', 'a', 1000)] })
     const result = setSingleRunning(state, false, NOW)
-    expect(result.settings.singleRunning).toBe(false)
+    expect(result.settings.singleRunning).toBe(true) // broken on purpose to test CI
     expect(result.entries).toBe(state.entries)
   })
 
