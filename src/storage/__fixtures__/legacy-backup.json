@@ -1,0 +1,60 @@
+{
+  "exportedAt": "2026-10-26T17:10:12.008Z",
+  "timers": [
+    {
+      "id": "mvgqfphrr95ray",
+      "name": "Voryn",
+      "accumulatedMs": 3915756,
+      "startedAt": null
+    },
+    {
+      "id": "mvgqg9eh1m8bq1",
+      "name": "Cubrama",
+      "accumulatedMs": 16970277,
+      "startedAt": null
+    },
+    {
+      "id": "mvgquwrodoh40r",
+      "name": "Starlings",
+      "accumulatedMs": 24986005,
+      "startedAt": null
+    },
+    {
+      "id": "mvgtd1vrhjf4w9",
+      "name": "Base",
+      "accumulatedMs": 0,
+      "startedAt": null
+    },
+    {
+      "id": "mvgtsnvby4wy92",
+      "name": "Ocio",
+      "accumulatedMs": 8894681,
+      "startedAt": null
+    },
+    {
+      "id": "mvgu7eyvhh9ltq",
+      "name": "Cosas de la casa",
+      "accumulatedMs": 7492801,
+      "startedAt": null
+    },
+    {
+      "id": "mvgzhcjzzdobq6",
+      "name": "I+D",
+      "accumulatedMs": 5421795,
+      "startedAt": null
+    },
+    {
+      "id": "mvh0xnecfi06vi",
+      "name": "Finanzas personales",
+      "accumulatedMs": 650581,
+      "startedAt": null
+    },
+    {
+      "id": "mvp9tndgsotpfv",
+      "name": "SofiGior",
+      "accumulatedMs": 925375,
+      "startedAt": null
+    }
+  ],
+  "singleRunning": true
+}
