@@ -3,10 +3,22 @@
 /* Design tokens. Components use these through Tailwind's arbitrary values or theme. */
 @theme {
   --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Accent of the prototype. `on-accent` is the text on top of a solid accent background. */
+  --color-accent: #2f7d5b;
+  --color-accent-soft: #e6f2ec;
+  --color-on-accent: #ffffff;
 }
 
 :root {
   color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-accent: #5fbf91;
+    --color-accent-soft: #1b2f25;
+    --color-on-accent: #0f1f17;
+  }
 }
 
 body {
